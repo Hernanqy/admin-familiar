@@ -520,6 +520,30 @@ function BudgetSection({ user, categories }) {
           </div>
         </>
       )}
+      {/* FOOTER */}
+      
+<footer
+  style={{
+    marginTop: "2rem",
+    padding: "1.5rem 0",
+    borderTop: "1px solid rgba(255,255,255,0.08)",
+    textAlign: "center",
+    fontSize: "0.85rem",
+    color: "#9ca3af",
+    letterSpacing: "0.05em",
+    background:
+      "linear-gradient(180deg, rgba(2,6,23,0.6), rgba(0,0,0,0.7))",
+  }}
+>
+  <p style={{ margin: 0 }}>
+    <strong style={{ color: "#22c55e" }}>NexuraVR</strong> &nbsp;|&nbsp;
+    División <span style={{ color: "#38bdf8" }}>AI</span>
+  </p>
+  <p style={{ margin: "0.25rem 0 0", opacity: 0.7 }}>
+    © {new Date().getFullYear()} Todos los derechos reservados
+  </p>
+</footer>
+
     </div>
   );
 }
