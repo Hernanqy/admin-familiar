@@ -1,307 +1,250 @@
 // src/components/Dashboard.jsx
-import { useEffect, useMemo, useState } from "react";
-import CategoryPieChart from "./CategoryPieChart.jsx";
-
+import { useEffect, useState } from "react";
+import { auth, db } from "../firebaseConfig";
 import {
-  collection,
   addDoc,
-  onSnapshot,
-  query,
-  where,
-  orderBy,
-  serverTimestamp,
-  updateDoc,
+  collection,
   deleteDoc,
   doc,
+  getDocs,
+  onSnapshot,
+  orderBy,
+  query,
+  updateDoc,
+  where,
 } from "firebase/firestore";
-import { db } from "../firebaseConfig";
-import ExpenseChart from "./ExpenseChart.jsx";
-import CategoryManager from "./CategoryManager.jsx";
+import { signOut } from "firebase/auth";
+import ExpenseChart from "./ExpenseChart";
+import BudgetSection from "./BudgetSection";
 
 function Dashboard({ user }) {
   const [categories, setCategories] = useState([]);
   const [transactions, setTransactions] = useState([]);
-  const [loadingTx, setLoadingTx] = useState(true);
-
-  // Formulario de movimientos (gastos/ingresos)
+  const [categoryName, setCategoryName] = useState("");
+  const [categoryType, setCategoryType] = useState("Gasto");
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
-  const [type, setType] = useState("gasto");
   const [categoryId, setCategoryId] = useState("");
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [editingTxId, setEditingTxId] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // ========= CATEGORÍAS =========
+  // ================== CARGAR DATOS ===================
   useEffect(() => {
-    const q = query(
+    if (!user) return;
+
+    // Escuchar categorías
+    const q1 = query(
       collection(db, "categories"),
       where("userId", "==", user.uid),
-      orderBy("type"),
       orderBy("name")
     );
-
-    const unsub = onSnapshot(q, (snap) => {
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setCategories(list);
+    const unsub1 = onSnapshot(q1, (snap) => {
+      setCategories(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
 
-    return () => unsub();
-  }, [user.uid]);
-
-  const handleCreateCategory = async ({ name, type }) => {
-    await addDoc(collection(db, "categories"), {
-      userId: user.uid,
-      name,
-      type, // "gasto" | "ingreso"
-      createdAt: serverTimestamp(),
-    });
-  };
-
-  const handleUpdateCategory = async (id, { name, type }) => {
-    await updateDoc(doc(db, "categories", id), {
-      name,
-      type,
-    });
-  };
-
-  const handleDeleteCategory = async (id) => {
-    if (!window.confirm("¿Eliminar esta categoría?")) return;
-    await deleteDoc(doc(db, "categories", id));
-  };
-
-  // ========= MOVIMIENTOS =========
-  useEffect(() => {
-    const q = query(
+    // Escuchar movimientos
+    const q2 = query(
       collection(db, "transactions"),
       where("userId", "==", user.uid),
       orderBy("date", "desc")
     );
-
-    const unsub = onSnapshot(q, (snap) => {
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setTransactions(list);
-      setLoadingTx(false);
+    const unsub2 = onSnapshot(q2, (snap) => {
+      setTransactions(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setLoading(false);
     });
 
-    return () => unsub();
-  }, [user.uid]);
+    return () => {
+      unsub1();
+      unsub2();
+    };
+  }, [user]);
 
-  const resetTxForm = () => {
-    setDescription("");
-    setAmount("");
-    setType("gasto");
-    setCategoryId("");
-    setDate(new Date().toISOString().slice(0, 10));
-    setEditingTxId(null);
+  // ================== AGREGAR CATEGORÍA ===================
+  const addCategory = async (e) => {
+    e.preventDefault();
+    if (!categoryName) return;
+    await addDoc(collection(db, "categories"), {
+      name: categoryName,
+      type: categoryType,
+      userId: user.uid,
+    });
+    setCategoryName("");
   };
 
-  const handleSubmitTx = async (e) => {
+  // ================== AGREGAR MOVIMIENTO ===================
+  const addTransaction = async (e) => {
     e.preventDefault();
-    if (!description.trim() || !amount || !date) return;
-
-    const cat = categories.find((c) => c.id === categoryId) || null;
-
-    const payload = {
+    if (!amount || !categoryId) return;
+    const cat = categories.find((c) => c.id === categoryId);
+    await addDoc(collection(db, "transactions"), {
       userId: user.uid,
-      description: description.trim(),
-      type, // gasto | ingreso
-      categoryId: cat ? cat.id : null,
-      categoryName: cat ? cat.name : null,
+      categoryId,
+      categoryName: cat.name,
+      type: cat.type,
       amount: Number(amount),
-      date,
-      createdAt: serverTimestamp(),
-    };
+      description,
+      date: new Date().toISOString(),
+    });
+    setAmount("");
+    setDescription("");
+    setCategoryId("");
+  };
 
-    try {
-      if (editingTxId) {
-        await updateDoc(doc(db, "transactions", editingTxId), payload);
-      } else {
-        await addDoc(collection(db, "transactions"), payload);
-      }
-      resetTxForm();
-    } catch (error) {
-      console.error(error);
-      alert("Error al guardar el movimiento");
+  // ================== ELIMINAR MOVIMIENTO ===================
+  const deleteTransaction = async (id) => {
+    if (confirm("¿Eliminar este movimiento?")) {
+      await deleteDoc(doc(db, "transactions", id));
     }
   };
 
-  const handleEditTx = (tx) => {
-    setEditingTxId(tx.id);
-    setDescription(tx.description || "");
-    setAmount(tx.amount?.toString() || "");
-    setType(tx.type || "gasto");
-    setCategoryId(tx.categoryId || "");
-    setDate(tx.date || new Date().toISOString().slice(0, 10));
-  };
-
-  const handleDeleteTx = async (id) => {
-    if (!window.confirm("¿Eliminar este movimiento?")) return;
-    await deleteDoc(doc(db, "transactions", id));
-  };
-
-  // ========= ESTADÍSTICAS =========
-
-  const totalGastos = useMemo(
-    () =>
-      transactions
-        .filter((t) => t.type === "gasto")
-        .reduce((sum, t) => sum + (t.amount || 0), 0),
-    [transactions]
-  );
-
-  const totalIngresos = useMemo(
-    () =>
-      transactions
-        .filter((t) => t.type === "ingreso")
-        .reduce((sum, t) => sum + (t.amount || 0), 0),
-    [transactions]
-  );
-
+  // ================== CALCULOS RESUMEN ===================
+  const totalGastos = transactions
+    .filter((t) => t.type === "Gasto")
+    .reduce((sum, t) => sum + t.amount, 0);
+  const totalIngresos = transactions
+    .filter((t) => t.type === "Ingreso")
+    .reduce((sum, t) => sum + t.amount, 0);
   const balance = totalIngresos - totalGastos;
 
-  // gastos del mes actual para el gráfico
-  const currentMonth = new Date().toISOString().slice(0, 7); // "YYYY-MM"
-  const expensesThisMonth = useMemo(
-    () =>
-      transactions.filter(
-        (t) => t.type === "gasto" && (t.date || "").slice(0, 7) === currentMonth
-      ),
-    [transactions, currentMonth]
-  );
+  const formatMoney = (v) =>
+    new Intl.NumberFormat("es-AR", {
+      style: "currency",
+      currency: "ARS",
+    }).format(v || 0);
 
-  const availableCategoriesForType = categories.filter(
-    (c) => c.type === type
-  );
+  const logout = async () => {
+    await signOut(auth);
+  };
 
+  // ================== RENDER ===================
   return (
-    <div className="dashboard">
-      {/* Columna izquierda: categorías + formulario */}
-      <div className="dashboard-left">
-        <CategoryManager
-          categories={categories}
-          onCreate={handleCreateCategory}
-          onUpdate={handleUpdateCategory}
-          onDelete={handleDeleteCategory}
-        />
+    <div className="dashboard app">
+      <header className="header">
+        <h1>Admin Familia</h1>
+        <div className="user-info">
+          <span>{user.email}</span>
+          <button onClick={logout}>Salir</button>
+        </div>
+      </header>
 
+      <div className="dashboard-left">
+        {/* ==== CATEGORÍAS ==== */}
         <section className="card">
-          <h2>Registrar movimiento</h2>
-          <form className="expense-form" onSubmit={handleSubmitTx}>
+          <h2>Categorías</h2>
+          <form onSubmit={addCategory} className="expense-form">
             <input
               type="text"
-              placeholder="Descripción (ej: Supermercado, Sueldo)"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Nombre de categoría"
+              value={categoryName}
+              onChange={(e) => setCategoryName(e.target.value)}
               required
             />
-
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="Monto"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              required
-            />
-
-            <select value={type} onChange={(e) => setType(e.target.value)}>
-              <option value="gasto">Gasto</option>
-              <option value="ingreso">Ingreso</option>
+            <select
+              value={categoryType}
+              onChange={(e) => setCategoryType(e.target.value)}
+            >
+              <option value="Gasto">Gasto</option>
+              <option value="Ingreso">Ingreso</option>
             </select>
+            <button type="submit">Agregar categoría</button>
+          </form>
+          <ul style={{ marginTop: "1rem" }}>
+            {categories.map((cat) => (
+              <li key={cat.id}>
+                {cat.name} ({cat.type})
+              </li>
+            ))}
+          </ul>
+        </section>
 
+        {/* ==== MOVIMIENTOS ==== */}
+        <section className="card">
+          <h2>Registrar movimiento</h2>
+          <form onSubmit={addTransaction} className="expense-form">
             <select
               value={categoryId}
               onChange={(e) => setCategoryId(e.target.value)}
+              required
             >
-              <option value="">Sin categoría</option>
-              {availableCategoriesForType.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.name}
+              <option value="">Seleccionar categoría</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.type})
                 </option>
               ))}
             </select>
 
             <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
+              type="number"
+              placeholder="Importe"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
               required
             />
 
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              <button type="submit">
-                {editingTxId ? "Actualizar movimiento" : "Guardar movimiento"}
-              </button>
-              {editingTxId && (
-                <button type="button" onClick={resetTxForm}>
-                  Cancelar
-                </button>
-              )}
-            </div>
+            <input
+              type="text"
+              placeholder="Descripción (opcional)"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+
+            <button type="submit">Agregar movimiento</button>
           </form>
         </section>
       </div>
 
-      {/* Columna derecha: resumen + gráficos + listado */}
       <div className="dashboard-right">
+        {/* ==== RESUMEN ==== */}
         <section className="card">
-          <h2>Resumen</h2>
-          <p>
-            Total ingresos: <strong>${totalIngresos.toFixed(2)}</strong>
-          </p>
-          <p>
-            Total gastos: <strong>${totalGastos.toFixed(2)}</strong>
-          </p>
+          <h2>Resumen actual</h2>
+          <p>Total ingresos: {formatMoney(totalIngresos)}</p>
+          <p>Total gastos: {formatMoney(totalGastos)}</p>
           <p>
             Balance:{" "}
-            <strong style={{ color: balance >= 0 ? "#4ade80" : "#f87171" }}>
-              ${balance.toFixed(2)}
+            <strong
+              style={{ color: balance >= 0 ? "#22c55e" : "#ef4444" }}
+            >
+              {formatMoney(balance)}
             </strong>
           </p>
         </section>
 
+        {/* ==== GRÁFICO ==== */}
         <section className="card">
-          <h2>Gastos del mes por categoría</h2>
-          <ExpenseChart expenses={expensesThisMonth} />
+          <h2>Gastos por categoría</h2>
+          <ExpenseChart
+            expenses={transactions.filter((t) => t.type === "Gasto")}
+          />
         </section>
 
+        {/* ==== LISTADO DE MOVIMIENTOS ==== */}
         <section className="card">
           <h2>Listado de movimientos</h2>
-          {loadingTx ? (
+          {loading ? (
             <p>Cargando...</p>
-          ) : transactions.length === 0 ? (
-            <p>Sin movimientos aún.</p>
           ) : (
             <table className="table">
               <thead>
                 <tr>
                   <th>Fecha</th>
-                  <th>Tipo</th>
                   <th>Categoría</th>
-                  <th>Descripción</th>
+                  <th>Tipo</th>
                   <th>Monto</th>
-                  <th style={{ textAlign: "right" }}>Acciones</th>
+                  <th>Descripción</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 {transactions.map((t) => (
                   <tr key={t.id}>
-                    <td>{t.date}</td>
-                    <td>{t.type === "gasto" ? "Gasto" : "Ingreso"}</td>
-                    <td>{t.categoryName || "-"}</td>
+                    <td>{new Date(t.date).toLocaleDateString()}</td>
+                    <td>{t.categoryName}</td>
+                    <td>{t.type}</td>
+                    <td>{formatMoney(t.amount)}</td>
                     <td>{t.description}</td>
                     <td>
-                      {t.type === "gasto" ? "-" : "+"}${" "}
-                      {t.amount?.toFixed(2)}
-                    </td>
-                    <td style={{ textAlign: "right" }}>
-                      <button onClick={() => handleEditTx(t)}>Editar</button>
-                      <button
-                        style={{ marginLeft: "0.5rem" }}
-                        onClick={() => handleDeleteTx(t.id)}
-                      >
-                        Eliminar
+                      <button onClick={() => deleteTransaction(t.id)}>
+                        🗑️
                       </button>
                     </td>
                   </tr>
@@ -310,6 +253,9 @@ function Dashboard({ user }) {
             </table>
           )}
         </section>
+
+        {/* ==== NUEVA SECCIÓN: PRESUPUESTO MENSUAL ==== */}
+        <BudgetSection user={user} categories={categories} />
       </div>
     </div>
   );
