@@ -206,6 +206,11 @@ const unsub1 = onSnapshot(q1, (snap) => {
             </strong>
           </p>
         </section>
+{/* ...tu sección de listado de gastos... */}
+
+<section className="card">
+  <BudgetSection user={user} categories={categories} />
+</section>
 
         {/* ==== GRÁFICO ==== */}
         <section className="card">
@@ -256,6 +261,8 @@ const unsub1 = onSnapshot(q1, (snap) => {
         <BudgetSection user={user} categories={categories} />
       </div>
     </div>
+
+
   );
 }
 
