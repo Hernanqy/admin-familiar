@@ -1,5 +1,7 @@
 // src/components/Dashboard.jsx
 import { useEffect, useMemo, useState } from "react";
+import CategoryPieChart from "./CategoryPieChart.jsx";
+
 import {
   collection,
   addDoc,
