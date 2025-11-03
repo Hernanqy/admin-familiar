@@ -73,8 +73,7 @@ function Dashboard({ user, onLogout }) {
       {/* HEADER */}
       <header className="dashboard-header">
         <div>
-          <h1>Admin Familia 👨‍👩‍👧‍👦</h1>
-          <p>Administración familiar</p>
+          
         </div>
         <div className="header-right">
           <span style={{ marginRight: "0.75rem" }}>{user.email}</span>
