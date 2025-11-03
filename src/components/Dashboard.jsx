@@ -1,251 +1,138 @@
 // src/components/Dashboard.jsx
 import { useEffect, useState } from "react";
-import { auth, db } from "../firebaseConfig";
 import {
   addDoc,
   collection,
   deleteDoc,
   doc,
-  getDocs,
   onSnapshot,
   orderBy,
   query,
-  updateDoc,
-  where,
 } from "firebase/firestore";
-import { signOut } from "firebase/auth";
-import ExpenseChart from "./ExpenseChart";
+import { db } from "../firebaseConfig";
 import BudgetSection from "./BudgetSection";
 
-function Dashboard({ user }) {
+function Dashboard({ user, onLogout }) {
   const [categories, setCategories] = useState([]);
-  const [transactions, setTransactions] = useState([]);
-  const [categoryName, setCategoryName] = useState("");
-  const [categoryType, setCategoryType] = useState("Gasto");
-  const [description, setDescription] = useState("");
-  const [amount, setAmount] = useState("");
-  const [categoryId, setCategoryId] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [newCategoryType, setNewCategoryType] = useState("Gasto");
+  const [budgetSummary, setBudgetSummary] = useState(null);
 
-  // ================== CARGAR DATOS ===================
+  // Cargar categorías (todas, para no romper las viejas)
   useEffect(() => {
-    if (!user) return;
-
-    // Escuchar categorías
-   // Escuchar categorías (sin filtrar por userId, así ves las viejas también)
-const q1 = query(collection(db, "categories"), orderBy("name"));
-const unsub1 = onSnapshot(q1, (snap) => {
-  setCategories(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-});
-
-
-    // Escuchar movimientos
-    const q2 = query(
-      collection(db, "transactions"),
-      where("userId", "==", user.uid),
-      orderBy("date", "desc")
-    );
-    const unsub2 = onSnapshot(q2, (snap) => {
-      setTransactions(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      setLoading(false);
+    const colRef = collection(db, "categories");
+    const q = query(colRef, orderBy("name"));
+    const unsub = onSnapshot(q, (snap) => {
+      setCategories(
+        snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }))
+      );
     });
 
-    return () => {
-      unsub1();
-      unsub2();
-    };
-  }, [user]);
+    return () => unsub();
+  }, []);
 
-  // ================== AGREGAR CATEGORÍA ===================
-  const addCategory = async (e) => {
-    e.preventDefault();
-    if (!categoryName) return;
-    await addDoc(collection(db, "categories"), {
-      name: categoryName,
-      type: categoryType,
-      userId: user.uid,
-    });
-    setCategoryName("");
-  };
+  const handleAddCategory = async () => {
+    const name = newCategoryName.trim();
+    if (!name) return;
 
-  // ================== AGREGAR MOVIMIENTO ===================
-  const addTransaction = async (e) => {
-    e.preventDefault();
-    if (!amount || !categoryId) return;
-    const cat = categories.find((c) => c.id === categoryId);
-    await addDoc(collection(db, "transactions"), {
-      userId: user.uid,
-      categoryId,
-      categoryName: cat.name,
-      type: cat.type,
-      amount: Number(amount),
-      description,
-      date: new Date().toISOString(),
-    });
-    setAmount("");
-    setDescription("");
-    setCategoryId("");
-  };
-
-  // ================== ELIMINAR MOVIMIENTO ===================
-  const deleteTransaction = async (id) => {
-    if (confirm("¿Eliminar este movimiento?")) {
-      await deleteDoc(doc(db, "transactions", id));
+    try {
+      await addDoc(collection(db, "categories"), {
+        name,
+        type: newCategoryType,
+        userId: user?.uid || null,
+      });
+      setNewCategoryName("");
+    } catch (e) {
+      console.error("Error agregando categoría:", e);
+      alert("Error al agregar categoría");
     }
   };
 
-  // ================== CALCULOS RESUMEN ===================
-  const totalGastos = transactions
-    .filter((t) => t.type === "Gasto")
-    .reduce((sum, t) => sum + t.amount, 0);
-  const totalIngresos = transactions
-    .filter((t) => t.type === "Ingreso")
-    .reduce((sum, t) => sum + t.amount, 0);
-  const balance = totalIngresos - totalGastos;
+  const handleDeleteCategory = async (id) => {
+    if (!window.confirm("¿Eliminar esta categoría?")) return;
+    try {
+      await deleteDoc(doc(db, "categories", id));
+    } catch (e) {
+      console.error("Error eliminando categoría:", e);
+      alert("Error al eliminar categoría");
+    }
+  };
 
   const formatMoney = (v) =>
     new Intl.NumberFormat("es-AR", {
       style: "currency",
       currency: "ARS",
+      minimumFractionDigits: 2,
     }).format(v || 0);
 
-  const logout = async () => {
-    await signOut(auth);
-  };
-
-  // ================== RENDER ===================
   return (
-    <div className="dashboard app">
-      <header className="header">
-        <h1>Admin Familia</h1>
-        <div className="user-info">
-          <span>{user.email}</span>
-          <button onClick={logout}>Salir</button>
+    <div className="dashboard">
+      {/* HEADER */}
+      <header className="dashboard-header">
+        <div>
+          <h1>Admin Familia 👨‍👩‍👧‍👦</h1>
+          <p>Administración familiar</p>
+        </div>
+        <div className="header-right">
+          <span style={{ marginRight: "0.75rem" }}>{user.email}</span>
+          <button onClick={onLogout}>sesión</button>
         </div>
       </header>
 
-      <div className="dashboard-left">
-        {/* ==== CATEGORÍAS ==== */}
+      <main className="dashboard-grid">
+        {/* CATEGORÍAS */}
         <section className="card">
           <h2>Categorías</h2>
-          <form onSubmit={addCategory} className="expense-form">
+
+          <div
+            style={{
+              display: "flex",
+              gap: "0.5rem",
+              marginBottom: "0.75rem",
+              flexWrap: "wrap",
+            }}
+          >
             <input
               type="text"
-              placeholder="Nombre de categoría"
-              value={categoryName}
-              onChange={(e) => setCategoryName(e.target.value)}
-              required
+              placeholder="Nombre de categoría (ej: Sueldo, Supermercado)"
+              value={newCategoryName}
+              onChange={(e) => setNewCategoryName(e.target.value)}
+              style={{ flex: 1, minWidth: "220px" }}
             />
             <select
-              value={categoryType}
-              onChange={(e) => setCategoryType(e.target.value)}
+              value={newCategoryType}
+              onChange={(e) => setNewCategoryType(e.target.value)}
             >
               <option value="Gasto">Gasto</option>
               <option value="Ingreso">Ingreso</option>
             </select>
-            <button type="submit">Agregar categoría</button>
-          </form>
-          <ul style={{ marginTop: "1rem" }}>
-            {categories.map((cat) => (
-              <li key={cat.id}>
-                {cat.name} ({cat.type})
-              </li>
-            ))}
-          </ul>
-        </section>
+            <button onClick={handleAddCategory}>Agregar categoría</button>
+          </div>
 
-        {/* ==== MOVIMIENTOS ==== */}
-        <section className="card">
-          <h2>Registrar movimiento</h2>
-          <form onSubmit={addTransaction} className="expense-form">
-            <select
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-              required
-            >
-              <option value="">Seleccionar categoría</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} ({c.type})
-                </option>
-              ))}
-            </select>
-
-            <input
-              type="number"
-              placeholder="Importe"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              required
-            />
-
-            <input
-              type="text"
-              placeholder="Descripción (opcional)"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-
-            <button type="submit">Agregar movimiento</button>
-          </form>
-        </section>
-      </div>
-
-      <div className="dashboard-right">
-        {/* ==== RESUMEN ==== */}
-        <section className="card">
-          <h2>Resumen actual</h2>
-          <p>Total ingresos: {formatMoney(totalIngresos)}</p>
-          <p>Total gastos: {formatMoney(totalGastos)}</p>
-          <p>
-            Balance:{" "}
-            <strong
-              style={{ color: balance >= 0 ? "#22c55e" : "#ef4444" }}
-            >
-              {formatMoney(balance)}
-            </strong>
-          </p>
-        </section>
-{/* ...tu sección de listado de gastos... */}
-
-
-
-        {/* ==== GRÁFICO ==== */}
-        <section className="card">
-          <h2>Gastos por categoría</h2>
-          <ExpenseChart
-            expenses={transactions.filter((t) => t.type === "Gasto")}
-          />
-        </section>
-
-        {/* ==== LISTADO DE MOVIMIENTOS ==== */}
-        <section className="card">
-          <h2>Listado de movimientos</h2>
-          {loading ? (
-            <p>Cargando...</p>
+          {categories.length === 0 ? (
+            <p>No hay categorías aún.</p>
           ) : (
             <table className="table">
               <thead>
                 <tr>
-                  <th>Fecha</th>
-                  <th>Categoría</th>
+                  <th>Nombre</th>
                   <th>Tipo</th>
-                  <th>Monto</th>
-                  <th>Descripción</th>
-                  <th></th>
+                  <th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                {transactions.map((t) => (
-                  <tr key={t.id}>
-                    <td>{new Date(t.date).toLocaleDateString()}</td>
-                    <td>{t.categoryName}</td>
-                    <td>{t.type}</td>
-                    <td>{formatMoney(t.amount)}</td>
-                    <td>{t.description}</td>
+                {categories.map((cat) => (
+                  <tr key={cat.id}>
+                    <td>{cat.name}</td>
+                    <td>{cat.type || "Gasto"}</td>
                     <td>
-                      <button onClick={() => deleteTransaction(t.id)}>
-                        🗑️
+                      <button
+                        onClick={() => handleDeleteCategory(cat.id)}
+                      >
+                        Eliminar
                       </button>
                     </td>
                   </tr>
@@ -255,12 +142,76 @@ const unsub1 = onSnapshot(q1, (snap) => {
           )}
         </section>
 
-        {/* ==== NUEVA SECCIÓN: PRESUPUESTO MENSUAL ==== */}
-        <BudgetSection user={user} categories={categories} />
-      </div>
+        {/* PRESUPUESTO MENSUAL */}
+        <section className="card">
+          <BudgetSection
+            user={user}
+            categories={categories}
+            onSummaryChange={setBudgetSummary}
+          />
+        </section>
+
+        {/* RESUMEN DEL MES BASADO EN PRESUPUESTO */}
+        <section className="card">
+          <h2>Resumen del mes (presupuesto)</h2>
+
+          {!budgetSummary ? (
+            <p>Cargá montos en el presupuesto para ver el resumen.</p>
+          ) : (
+            <>
+              <p>
+                Gastos totales presupuestados:{" "}
+                <strong>
+                  {formatMoney(budgetSummary.totalGastos)}
+                </strong>
+              </p>
+              <p>
+                Pago total (categorías marcadas como pagadas):{" "}
+                <strong>
+                  {formatMoney(budgetSummary.totalPagado)}
+                </strong>
+              </p>
+              <p>
+                Ingresos por sueldos (presupuesto):{" "}
+                <strong>
+                  {formatMoney(budgetSummary.totalSueldos)}
+                </strong>
+              </p>
+              <p>
+                Disponible (sueldos − pagado):{" "}
+                <strong>
+                  {formatMoney(budgetSummary.disponible)}
+                </strong>
+              </p>
+
+              <h3 style={{ marginTop: "0.75rem" }}>
+                Categorías pendientes de pago
+              </h3>
+              {budgetSummary.pendientes.length === 0 ? (
+                <p>Todo está pagado 👌</p>
+              ) : (
+                <>
+                  <ul>
+                    {budgetSummary.pendientes.map((p) => (
+                      <li key={p.categoryId}>
+                        {p.categoryName}:{" "}
+                        {formatMoney(p.amount)}
+                      </li>
+                    ))}
+                  </ul>
+                  <p>
+                    Total pendiente:{" "}
+                    <strong>
+                      {formatMoney(budgetSummary.totalPendiente)}
+                    </strong>
+                  </p>
+                </>
+              )}
+            </>
+          )}
+        </section>
+      </main>
     </div>
-
-
   );
 }
 
