@@ -9,6 +9,26 @@ const getCurrentMonth = () => {
   return `${d.getFullYear()}-${m}`; // 2025-11
 };
 
+// Estilo base para el botón de guardar
+const saveButtonBaseStyle = {
+  marginTop: "0.75rem",
+  padding: "0.6rem 1.3rem",
+  borderRadius: "999px",
+  border: "none",
+  background: "linear-gradient(135deg, #16a34a, #22c55e)",
+  color: "#f9fafb",
+  fontWeight: 600,
+  fontSize: "0.95rem",
+  display: "inline-flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: "0.15rem",
+  boxShadow: "0 10px 15px -3px rgba(34, 197, 94, 0.4)",
+  cursor: "pointer",
+  transition: "transform 0.1s ease, box-shadow 0.1s ease, opacity 0.1s ease",
+};
+
 // Une categorías existentes con lo que haya guardado en Firestore
 const mergeCategoriesWithBudget = (categories, budgetItems) => {
   const map = {};
@@ -38,7 +58,7 @@ function BudgetSection({ user, categories }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const docId = `${user.uid}_${month}`;
+  const docId = user ? `${user.uid}_${month}` : "";
 
   // Cargar presupuesto cuando cambian mes o categorías
   useEffect(() => {
@@ -51,9 +71,7 @@ function BudgetSection({ user, categories }) {
         const snap = await getDoc(ref);
         if (snap.exists()) {
           const data = snap.data();
-          setItems(
-            mergeCategoriesWithBudget(categories, data.items || [])
-          );
+          setItems(mergeCategoriesWithBudget(categories, data.items || []));
         } else {
           setItems(mergeCategoriesWithBudget(categories, []));
         }
@@ -66,7 +84,7 @@ function BudgetSection({ user, categories }) {
 
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user.uid, month, JSON.stringify(categories)]);
+  }, [user?.uid, month, JSON.stringify(categories)]);
 
   // Cambiar monto de una categoría
   const handleAmountChange = (categoryId, value) => {
@@ -89,6 +107,11 @@ function BudgetSection({ user, categories }) {
 
   // Guardar en Firestore
   const handleSave = async () => {
+    if (!user) {
+      alert("No hay usuario autenticado. Iniciá sesión para guardar el presupuesto.");
+      return;
+    }
+
     setSaving(true);
     try {
       const ref = doc(db, "monthlyBudgets", docId);
@@ -104,10 +127,11 @@ function BudgetSection({ user, categories }) {
         month,
         items: itemsToSave,
       });
-      alert("Presupuesto guardado ✅");
+
+      alert("Presupuesto guardado en la base de datos ✅");
     } catch (e) {
-      console.error(e);
-      alert("Error al guardar el presupuesto");
+      console.error("Error al guardar el presupuesto:", e);
+      alert("Error al guardar el presupuesto. Revisá la consola para más detalles.");
     } finally {
       setSaving(false);
     }
@@ -164,6 +188,8 @@ function BudgetSection({ user, categories }) {
       minimumFractionDigits: 2,
     }).format(v || 0);
 
+  const isSaveDisabled = saving || loading || !items.length;
+
   return (
     <div>
       <h2>Presupuesto mensual</h2>
@@ -213,10 +239,7 @@ function BudgetSection({ user, categories }) {
                       min="0"
                       value={it.amount}
                       onChange={(e) =>
-                        handleAmountChange(
-                          it.categoryId,
-                          e.target.value
-                        )
+                        handleAmountChange(it.categoryId, e.target.value)
                       }
                     />
                   </td>
@@ -225,10 +248,7 @@ function BudgetSection({ user, categories }) {
                       type="checkbox"
                       checked={it.paid}
                       onChange={(e) =>
-                        handlePaidChange(
-                          it.categoryId,
-                          e.target.checked
-                        )
+                        handlePaidChange(it.categoryId, e.target.checked)
                       }
                     />
                   </td>
@@ -237,8 +257,23 @@ function BudgetSection({ user, categories }) {
             </tbody>
           </table>
 
-          <button onClick={handleSave} disabled={saving}>
-            {saving ? "Guardando..." : "Guardar presupuesto"}
+          <button
+            onClick={handleSave}
+            disabled={isSaveDisabled}
+            style={{
+              ...saveButtonBaseStyle,
+              opacity: isSaveDisabled ? 0.6 : 1,
+              cursor: isSaveDisabled ? "not-allowed" : "pointer",
+            }}
+          >
+            <span>
+              {saving ? "Guardando presupuesto..." : "💾 Guardar presupuesto"}
+            </span>
+            {!saving && (
+              <span style={{ fontSize: "0.75rem", opacity: 0.9 }}>
+                Se almacenará en la base de datos y actualizará tus registros
+              </span>
+            )}
           </button>
 
           <div style={{ marginTop: "1rem" }}>
