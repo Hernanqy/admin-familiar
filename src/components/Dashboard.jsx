@@ -208,9 +208,7 @@ const unsub1 = onSnapshot(q1, (snap) => {
         </section>
 {/* ...tu sección de listado de gastos... */}
 
-<section className="card">
-  <BudgetSection user={user} categories={categories} />
-</section>
+
 
         {/* ==== GRÁFICO ==== */}
         <section className="card">

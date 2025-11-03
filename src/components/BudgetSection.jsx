@@ -5,55 +5,60 @@ import { db } from "../firebaseConfig";
 
 const getCurrentMonth = () => {
   const d = new Date();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  return `${d.getFullYear()}-${month}`; // formato 2025-11
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${d.getFullYear()}-${m}`; // 2025-11
 };
 
-// Une categorías que vienen de Firestore con lo que haya guardado en el presupuesto
+// Une categorías existentes con lo que haya guardado en Firestore
 const mergeCategoriesWithBudget = (categories, budgetItems) => {
-  const byCategoryId = {};
-  budgetItems.forEach((item) => {
-    byCategoryId[item.categoryId] = item;
+  const map = {};
+  budgetItems.forEach((it) => {
+    map[it.categoryId] = it;
   });
 
   return categories.map((cat) => {
-    const existing = byCategoryId[cat.id] || {};
+    const existing = map[cat.id] || {};
     return {
       categoryId: cat.id,
       categoryName: cat.name,
-      type: cat.type, // "Gasto" o "Ingreso"
-      amount: existing.amount || 0,
+      type: cat.type || "Gasto",
+      // string vacío mientras no haya valor
+      amount:
+        existing.amount === 0 || existing.amount
+          ? String(existing.amount)
+          : "",
       paid: existing.paid || false,
     };
   });
 };
 
 function BudgetSection({ user, categories }) {
-  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth);
+  const [month, setMonth] = useState(getCurrentMonth);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const budgetDocId = `${user.uid}_${selectedMonth}`; // un doc por usuario+mes
+  const docId = `${user.uid}_${month}`;
 
-  // Cargar presupuesto al cambiar mes o categorías
+  // Cargar presupuesto cuando cambian mes o categorías
   useEffect(() => {
     if (!user) return;
 
     const load = async () => {
       setLoading(true);
       try {
-        const ref = doc(db, "monthlyBudgets", budgetDocId);
+        const ref = doc(db, "monthlyBudgets", docId);
         const snap = await getDoc(ref);
-
         if (snap.exists()) {
           const data = snap.data();
-          setItems(mergeCategoriesWithBudget(categories, data.items || []));
+          setItems(
+            mergeCategoriesWithBudget(categories, data.items || [])
+          );
         } else {
           setItems(mergeCategoriesWithBudget(categories, []));
         }
-      } catch (err) {
-        console.error("Error cargando presupuesto:", err);
+      } catch (e) {
+        console.error("Error cargando presupuesto:", e);
       } finally {
         setLoading(false);
       }
@@ -61,63 +66,74 @@ function BudgetSection({ user, categories }) {
 
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user.uid, selectedMonth, JSON.stringify(categories)]);
+  }, [user.uid, month, JSON.stringify(categories)]);
 
+  // Cambiar monto de una categoría
   const handleAmountChange = (categoryId, value) => {
-    const amount = Number(value) || 0;
+    // Permitimos string vacío para que no aparezca "0"
     setItems((prev) =>
-      prev.map((item) =>
-        item.categoryId === categoryId ? { ...item, amount } : item
+      prev.map((it) =>
+        it.categoryId === categoryId ? { ...it, amount: value } : it
       )
     );
   };
 
+  // Cambiar "pagado" de una categoría
   const handlePaidChange = (categoryId, checked) => {
     setItems((prev) =>
-      prev.map((item) =>
-        item.categoryId === categoryId ? { ...item, paid: checked } : item
+      prev.map((it) =>
+        it.categoryId === categoryId ? { ...it, paid: checked } : it
       )
     );
   };
 
+  // Guardar en Firestore
   const handleSave = async () => {
     setSaving(true);
     try {
-      const ref = doc(db, "monthlyBudgets", budgetDocId);
+      const ref = doc(db, "monthlyBudgets", docId);
+
+      // Convertimos amount a número al guardar
+      const itemsToSave = items.map((it) => ({
+        ...it,
+        amount: Number(it.amount) || 0,
+      }));
+
       await setDoc(ref, {
         userId: user.uid,
-        month: selectedMonth,
-        items,
+        month,
+        items: itemsToSave,
       });
       alert("Presupuesto guardado ✅");
-    } catch (err) {
-      console.error(err);
+    } catch (e) {
+      console.error(e);
       alert("Error al guardar el presupuesto");
     } finally {
       setSaving(false);
     }
   };
 
-  // ====== Cálculos de resumen ======
+  // Cálculos del resumen
   const summary = useMemo(() => {
     const gastos = items.filter((i) => i.type === "Gasto");
-    const ingresosSueldos = items.filter(
+
+    // ingresos por sueldos (categorías tipo Ingreso con "sueldo" en el nombre)
+    const sueldos = items.filter(
       (i) =>
         i.type === "Ingreso" &&
         i.categoryName.toLowerCase().includes("sueldo")
     );
 
-    const totalGastosPresup = gastos.reduce(
-      (sum, i) => sum + (Number(i.amount) || 0),
+    const totalGastos = gastos.reduce(
+      (s, i) => s + (Number(i.amount) || 0),
       0
     );
-
     const totalPagado = gastos
       .filter((i) => i.paid)
-      .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+      .reduce((s, i) => s + (Number(i.amount) || 0), 0);
 
-    const totalSueldos = ingresosSueldos.reduce(
-      (sum, i) => sum + (Number(i.amount) || 0),
+    const totalSueldos = sueldos.reduce(
+      (s, i) => s + (Number(i.amount) || 0),
       0
     );
 
@@ -126,14 +142,13 @@ function BudgetSection({ user, categories }) {
     const pendientes = gastos.filter(
       (i) => !i.paid && Number(i.amount) > 0
     );
-
     const totalPendiente = pendientes.reduce(
-      (sum, i) => sum + (Number(i.amount) || 0),
+      (s, i) => s + (Number(i.amount) || 0),
       0
     );
 
     return {
-      totalGastosPresup,
+      totalGastos,
       totalPagado,
       totalSueldos,
       disponible,
@@ -150,7 +165,7 @@ function BudgetSection({ user, categories }) {
     }).format(v || 0);
 
   return (
-    <div className="card">
+    <div>
       <h2>Presupuesto mensual</h2>
 
       <div style={{ marginBottom: "0.75rem" }}>
@@ -158,15 +173,8 @@ function BudgetSection({ user, categories }) {
           Mes:&nbsp;
           <input
             type="month"
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            style={{
-              background: "#020617",
-              borderRadius: "8px",
-              border: "1px solid #4b5563",
-              color: "#e5e7eb",
-              padding: "0.2rem 0.4rem",
-            }}
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
           />
         </label>
       </div>
@@ -185,34 +193,42 @@ function BudgetSection({ user, categories }) {
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
-                <tr key={item.categoryId}>
-                  <td>{item.categoryName}</td>
-                  <td>{item.type}</td>
+              {items.map((it) => (
+                <tr
+                  key={it.categoryId}
+                  style={
+                    it.paid
+                      ? {
+                          backgroundColor: "#022c22",
+                          color: "#bbf7d0",
+                        }
+                      : {}
+                  }
+                >
+                  <td>{it.categoryName}</td>
+                  <td>{it.type}</td>
                   <td>
                     <input
                       type="number"
                       min="0"
-                      value={item.amount}
+                      value={it.amount}
                       onChange={(e) =>
-                        handleAmountChange(item.categoryId, e.target.value)
+                        handleAmountChange(
+                          it.categoryId,
+                          e.target.value
+                        )
                       }
-                      style={{
-                        width: "100%",
-                        background: "#020617",
-                        borderRadius: "8px",
-                        border: "1px solid #4b5563",
-                        color: "#e5e7eb",
-                        padding: "0.25rem 0.4rem",
-                      }}
                     />
                   </td>
                   <td>
                     <input
                       type="checkbox"
-                      checked={item.paid}
+                      checked={it.paid}
                       onChange={(e) =>
-                        handlePaidChange(item.categoryId, e.target.checked)
+                        handlePaidChange(
+                          it.categoryId,
+                          e.target.checked
+                        )
                       }
                     />
                   </td>
@@ -225,12 +241,11 @@ function BudgetSection({ user, categories }) {
             {saving ? "Guardando..." : "Guardar presupuesto"}
           </button>
 
-          {/* Resumen del presupuesto */}
           <div style={{ marginTop: "1rem" }}>
             <h3>Resumen del mes</h3>
             <p>
               Total gastos presupuestados:{" "}
-              <strong>{formatMoney(summary.totalGastosPresup)}</strong>
+              <strong>{formatMoney(summary.totalGastos)}</strong>
             </p>
             <p>
               Total pagado:{" "}
