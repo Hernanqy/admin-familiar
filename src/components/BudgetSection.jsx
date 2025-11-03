@@ -6,10 +6,9 @@ import { db } from "../firebaseConfig";
 const getCurrentMonth = () => {
   const d = new Date();
   const m = String(d.getMonth() + 1).padStart(2, "0");
-  return `${d.getFullYear()}-${m}`; // 2025-11
+  return `${d.getFullYear()}-${m}`;
 };
 
-// Estilo base para el botón de guardar
 const saveButtonBaseStyle = {
   marginTop: "0.75rem",
   padding: "0.6rem 1.3rem",
@@ -29,7 +28,6 @@ const saveButtonBaseStyle = {
   transition: "transform 0.1s ease, box-shadow 0.1s ease, opacity 0.1s ease",
 };
 
-// Une categorías existentes con lo que haya guardado en Firestore
 const mergeCategoriesWithBudget = (categories, budgetItems) => {
   const map = {};
   budgetItems.forEach((it) => {
@@ -38,11 +36,16 @@ const mergeCategoriesWithBudget = (categories, budgetItems) => {
 
   return categories.map((cat) => {
     const existing = map[cat.id] || {};
+
+    // Normalizamos el tipo a "gasto" / "ingreso"
+    const rawType = cat.type || existing.type || "Gasto";
+    const t = String(rawType).toLowerCase();
+    const normalizedType = t === "ingreso" ? "ingreso" : "gasto";
+
     return {
       categoryId: cat.id,
       categoryName: cat.name,
-      type: cat.type || "Gasto",
-      // string vacío mientras no haya valor
+      type: normalizedType, // <- ahora siempre "gasto" o "ingreso" en minúscula
       amount:
         existing.amount === 0 || existing.amount
           ? String(existing.amount)
@@ -60,7 +63,6 @@ function BudgetSection({ user, categories }) {
 
   const docId = user ? `${user.uid}_${month}` : "";
 
-  // Cargar presupuesto cuando cambian mes o categorías
   useEffect(() => {
     if (!user) return;
 
@@ -83,12 +85,9 @@ function BudgetSection({ user, categories }) {
     };
 
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid, month, JSON.stringify(categories)]);
 
-  // Cambiar monto de una categoría
   const handleAmountChange = (categoryId, value) => {
-    // Permitimos string vacío para que no aparezca "0"
     setItems((prev) =>
       prev.map((it) =>
         it.categoryId === categoryId ? { ...it, amount: value } : it
@@ -96,7 +95,6 @@ function BudgetSection({ user, categories }) {
     );
   };
 
-  // Cambiar "pagado" de una categoría
   const handlePaidChange = (categoryId, checked) => {
     setItems((prev) =>
       prev.map((it) =>
@@ -105,7 +103,6 @@ function BudgetSection({ user, categories }) {
     );
   };
 
-  // Guardar en Firestore
   const handleSave = async () => {
     if (!user) {
       alert("No hay usuario autenticado. Iniciá sesión para guardar el presupuesto.");
@@ -116,7 +113,6 @@ function BudgetSection({ user, categories }) {
     try {
       const ref = doc(db, "monthlyBudgets", docId);
 
-      // Convertimos amount a número al guardar
       const itemsToSave = items.map((it) => ({
         ...it,
         amount: Number(it.amount) || 0,
@@ -137,15 +133,16 @@ function BudgetSection({ user, categories }) {
     }
   };
 
-  // Cálculos del resumen
+  // 🔥 ACÁ ESTÁ EL CAMBIO IMPORTANTE
   const summary = useMemo(() => {
-    // Gasto = cualquier ítem cuyo tipo es "Gasto"
-    const gastos = items.filter((i) => i.type === "Gasto");
+    // Usamos type en minúscula siempre
+    const gastos = items.filter(
+      (i) => String(i.type).toLowerCase() === "gasto"
+    );
 
-    // ingresos por sueldos (categorías tipo Ingreso con "sueldo" en el nombre)
     const sueldos = items.filter(
       (i) =>
-        i.type === "Ingreso" &&
+        String(i.type).toLowerCase() === "ingreso" &&
         i.categoryName.toLowerCase().includes("sueldo")
     );
 
@@ -163,13 +160,9 @@ function BudgetSection({ user, categories }) {
       0
     );
 
-    // Lo que te quedaría si se cumplen todos los gastos presupuestados
     const disponiblePresupuestado = totalSueldos - totalGastos;
-
-    // Lo que te queda hoy, con lo efectivamente pagado
     const disponibleReal = totalSueldos - totalPagado;
 
-    // Todas las categorías de gasto que NO están marcadas como pagadas
     const pendientes = gastos.filter((i) => !i.paid);
 
     const totalPendiente = pendientes.reduce(
@@ -286,11 +279,11 @@ function BudgetSection({ user, categories }) {
           <div style={{ marginTop: "1rem" }}>
             <h3>Resumen del mes</h3>
             <p>
-              Total gastos presupuestados:{" "}
+              Gastos totales presupuestados:{" "}
               <strong>{formatMoney(summary.totalGastos)}</strong>
             </p>
             <p>
-              Total pagado:{" "}
+              Pago total:{" "}
               <strong>{formatMoney(summary.totalPagado)}</strong>
             </p>
             <p>
