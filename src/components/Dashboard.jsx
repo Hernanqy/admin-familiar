@@ -18,7 +18,7 @@ function Dashboard({ user, onLogout }) {
   const [newCategoryType, setNewCategoryType] = useState("Gasto");
   const [budgetSummary, setBudgetSummary] = useState(null);
 
-  // Cargar categorías (todas, para no romper las viejas)
+  // Cargar categorías
   useEffect(() => {
     const colRef = collection(db, "categories");
     const q = query(colRef, orderBy("name"));
