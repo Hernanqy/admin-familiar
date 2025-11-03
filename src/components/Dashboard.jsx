@@ -32,14 +32,12 @@ function Dashboard({ user }) {
     if (!user) return;
 
     // Escuchar categorías
-    const q1 = query(
-      collection(db, "categories"),
-      where("userId", "==", user.uid),
-      orderBy("name")
-    );
-    const unsub1 = onSnapshot(q1, (snap) => {
-      setCategories(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
+   // Escuchar categorías (sin filtrar por userId, así ves las viejas también)
+const q1 = query(collection(db, "categories"), orderBy("name"));
+const unsub1 = onSnapshot(q1, (snap) => {
+  setCategories(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+});
+
 
     // Escuchar movimientos
     const q2 = query(
