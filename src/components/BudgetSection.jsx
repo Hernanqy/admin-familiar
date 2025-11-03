@@ -9,7 +9,7 @@ const getCurrentMonth = () => {
   return `${d.getFullYear()}-${m}`;
 };
 
-// Estilo base botón principal
+// Botón principal de guardar
 const saveButtonBaseStyle = {
   marginTop: "0.75rem",
   padding: "0.7rem 1.4rem",
@@ -29,21 +29,21 @@ const saveButtonBaseStyle = {
   transition: "transform 0.1s ease, box-shadow 0.1s ease, opacity 0.1s ease",
 };
 
-// Botón secundario (mostrar/ocultar)
+// Botones secundarios (filtros / mostrar-ocultar)
 const secondaryButtonStyle = {
-  padding: "0.5rem 1rem",
+  padding: "0.45rem 0.9rem",
   borderRadius: "999px",
   border: "1px solid #4b5563",
   background: "transparent",
   color: "#e5e7eb",
-  fontSize: "0.85rem",
+  fontSize: "0.8rem",
   cursor: "pointer",
   display: "inline-flex",
   alignItems: "center",
   gap: "0.4rem",
 };
 
-// Card de resumen
+// Card base para los resúmenes
 const summaryCardStyle = {
   padding: "0.9rem 1rem",
   borderRadius: "0.9rem",
@@ -53,6 +53,7 @@ const summaryCardStyle = {
   boxShadow: "0 10px 25px -15px rgba(15,118,110,0.7)",
 };
 
+// Une categorías existentes con la info guardada en Firestore
 const mergeCategoriesWithBudget = (categories, budgetItems) => {
   const map = {};
   budgetItems.forEach((it) => {
@@ -80,7 +81,7 @@ const mergeCategoriesWithBudget = (categories, budgetItems) => {
   });
 };
 
-// Calcula totales a partir de una lista de ítems
+// Calcula los totales a partir de la lista de ítems
 const calcSummary = (items) => {
   const gastos = items.filter(
     (i) => String(i.type).toLowerCase() === "gasto"
@@ -92,8 +93,6 @@ const calcSummary = (items) => {
       i.categoryName.toLowerCase().includes("sueldo")
   );
 
-  
-  
   const totalPagado = gastos
     .filter((i) => i.paid)
     .reduce((s, i) => s + (Number(i.amount) || 0), 0);
@@ -141,16 +140,18 @@ function BudgetSection({ user, categories }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+
   const [showCategories, setShowCategories] = useState(true);
+  const [showGastos, setShowGastos] = useState(true);
+  const [showIngresos, setShowIngresos] = useState(true);
 
   // Resumen basado en el ÚLTIMO guardado
-  const [savedSummary, setSavedSummary] = useState(
-    calcSummary([])
-  );
+  const [savedSummary, setSavedSummary] = useState(calcSummary([]));
   const [lastSavedAt, setLastSavedAt] = useState(null);
 
   const docId = user ? `${user.uid}_${month}` : "";
 
+  // Carga inicial desde Firestore
   useEffect(() => {
     if (!user) return;
 
@@ -167,8 +168,6 @@ function BudgetSection({ user, categories }) {
             data.items || []
           );
           setItems(merged);
-
-          // Resumen + fecha del documento
           setSavedSummary(calcSummary(merged));
           setLastSavedAt(data.updatedAt || null);
         } else {
@@ -188,6 +187,7 @@ function BudgetSection({ user, categories }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid, month, JSON.stringify(categories)]);
 
+  // Cambios en montos
   const handleAmountChange = (categoryId, value) => {
     setItems((prev) =>
       prev.map((it) =>
@@ -196,6 +196,7 @@ function BudgetSection({ user, categories }) {
     );
   };
 
+  // Cambios en pagado
   const handlePaidChange = (categoryId, checked) => {
     setItems((prev) =>
       prev.map((it) =>
@@ -204,6 +205,7 @@ function BudgetSection({ user, categories }) {
     );
   };
 
+  // Guardar en Firestore
   const handleSave = async () => {
     if (!user) {
       alert(
@@ -230,7 +232,7 @@ function BudgetSection({ user, categories }) {
         updatedAt: nowIso,
       });
 
-      // Actualizamos resumen y fecha SOLO cuando se guarda
+      // Actualizamos el resumen y la fecha SOLO al guardar
       setSavedSummary(calcSummary(itemsToSave));
       setLastSavedAt(nowIso);
 
@@ -256,6 +258,7 @@ function BudgetSection({ user, categories }) {
         padding: "1rem",
       }}
     >
+      {/* CABECERA */}
       <div
         style={{
           display: "flex",
@@ -287,12 +290,26 @@ function BudgetSection({ user, categories }) {
 
           <button
             type="button"
-            onClick={() =>
-              setShowCategories((prev) => !prev)
-            }
+            onClick={() => setShowCategories((prev) => !prev)}
             style={secondaryButtonStyle}
           >
-            {showCategories ? "Ocultar categorías" : "Ver categorías"}
+            {showCategories ? "Ocultar tabla" : "Mostrar tabla"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowGastos((prev) => !prev)}
+            style={secondaryButtonStyle}
+          >
+            {showGastos ? "Ocultar gastos" : "Mostrar gastos"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowIngresos((prev) => !prev)}
+            style={secondaryButtonStyle}
+          >
+            {showIngresos ? "Ocultar ingresos" : "Mostrar ingresos"}
           </button>
         </div>
       </div>
@@ -301,6 +318,7 @@ function BudgetSection({ user, categories }) {
         <p>Cargando presupuesto…</p>
       ) : (
         <>
+          {/* TABLA DE CATEGORÍAS */}
           {showCategories && (
             <div
               style={{
@@ -326,53 +344,61 @@ function BudgetSection({ user, categories }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((it) => (
-                    <tr
-                      key={it.categoryId}
-                      style={
-                        it.paid
-                          ? {
-                              backgroundColor: "#022c22",
-                              color: "#bbf7d0",
+                  {items
+                    .filter((it) => {
+                      if (!showGastos && it.type === "gasto") return false;
+                      if (!showIngresos && it.type === "ingreso")
+                        return false;
+                      return true;
+                    })
+                    .map((it) => (
+                      <tr
+                        key={it.categoryId}
+                        style={
+                          it.paid
+                            ? {
+                                backgroundColor: "#022c22",
+                                color: "#bbf7d0",
+                              }
+                            : {}
+                        }
+                      >
+                        <td>{it.categoryName}</td>
+                        <td>{it.type}</td>
+                        <td>
+                          <input
+                            type="number"
+                            min="0"
+                            value={it.amount}
+                            onChange={(e) =>
+                              handleAmountChange(
+                                it.categoryId,
+                                e.target.value
+                              )
                             }
-                          : {}
-                      }
-                    >
-                      <td>{it.categoryName}</td>
-                      <td>{it.type}</td>
-                      <td>
-                        <input
-                          type="number"
-                          min="0"
-                          value={it.amount}
-                          onChange={(e) =>
-                            handleAmountChange(
-                              it.categoryId,
-                              e.target.value
-                            )
-                          }
-                          style={{ width: "100%" }}
-                        />
-                      </td>
-                      <td style={{ textAlign: "center" }}>
-                        <input
-                          type="checkbox"
-                          checked={it.paid}
-                          onChange={(e) =>
-                            handlePaidChange(
-                              it.categoryId,
-                              e.target.checked
-                            )
-                          }
-                        />
-                      </td>
-                    </tr>
-                  ))}
+                            style={{ width: "100%" }}
+                          />
+                        </td>
+                        <td style={{ textAlign: "center" }}>
+                          <input
+                            type="checkbox"
+                            checked={it.paid}
+                            onChange={(e) =>
+                              handlePaidChange(
+                                it.categoryId,
+                                e.target.checked
+                              )
+                            }
+                          />
+                        </td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>
           )}
 
+          {/* BOTÓN GUARDAR */}
           <button
             onClick={handleSave}
             disabled={isSaveDisabled}
@@ -385,114 +411,111 @@ function BudgetSection({ user, categories }) {
             }}
           >
             <span>
-              {saving
-                ? "Guardando presupuesto..."
-                : "💾 Guardar presupuesto"}
+              {saving ? "Guardando presupuesto..." : "💾 Guardar presupuesto"}
             </span>
             {!saving && (
-              <span
-                style={{ fontSize: "0.75rem", opacity: 0.9 }}
-              >
-                Se almacenará en la base de datos y actualizará
-                tus registros
+              <span style={{ fontSize: "0.75rem", opacity: 0.9 }}>
+                Se almacenará en la base de datos y actualizará tus registros
               </span>
             )}
           </button>
 
-          {/* RESUMEN SIMPLE: 2 CARTELITOS */}
-<div
-  style={{
-    marginTop: "1.25rem",
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
-    gap: "1rem",
-  }}
->
-  {/* TOTAL PAGADO */}
-  <div
-    style={{
-      ...summaryCardStyle,
-      background:
-        "linear-gradient(135deg, rgba(37,99,235,0.25), rgba(147,51,234,0.15))",
-      border: "1px solid rgba(59,130,246,0.4)",
-      boxShadow: "0 10px 25px -12px rgba(59,130,246,0.3)",
-      color: "#e0e7ff",
-    }}
-  >
-    <div
-      style={{
-        fontSize: "0.8rem",
-        textTransform: "uppercase",
-        letterSpacing: "0.08em",
-        opacity: 0.85,
-        marginBottom: "0.2rem",
-      }}
-    >
-      💸 Total pagado hasta
-    </div>
-    <div
-      style={{
-        fontSize: "0.85rem",
-        opacity: 0.8,
-        marginBottom: "0.35rem",
-      }}
-    >
-      {formatDate(lastSavedAt)}
-    </div>
-    <div
-      style={{
-        fontSize: "1.6rem",
-        fontWeight: 700,
-      }}
-    >
-      {formatMoney(summary.totalPagado)}
-    </div>
-  </div>
+          {/* RESUMEN: 2 CUADROS DE COLORES */}
+          <div
+            style={{
+              marginTop: "1.25rem",
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(230px, 1fr))",
+              gap: "1rem",
+            }}
+          >
+            {/* TOTAL PAGADO */}
+            <div
+              style={{
+                ...summaryCardStyle,
+                background:
+                  "linear-gradient(135deg, rgba(37,99,235,0.25), rgba(147,51,234,0.15))",
+                border: "1px solid rgba(59,130,246,0.4)",
+                boxShadow:
+                  "0 10px 25px -12px rgba(59,130,246,0.3)",
+                color: "#e0e7ff",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "0.8rem",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                  opacity: 0.85,
+                  marginBottom: "0.2rem",
+                }}
+              >
+                💸 Total pagado hasta
+              </div>
+              <div
+                style={{
+                  fontSize: "0.85rem",
+                  opacity: 0.8,
+                  marginBottom: "0.35rem",
+                }}
+              >
+                {formatDate(lastSavedAt)}
+              </div>
+              <div
+                style={{
+                  fontSize: "1.6rem",
+                  fontWeight: 700,
+                }}
+              >
+                {formatMoney(summary.totalPagado)}
+              </div>
+            </div>
 
-  {/* DINERO DISPONIBLE */}
-  <div
-    style={{
-      ...summaryCardStyle,
-      background:
-        "linear-gradient(135deg, rgba(34,197,94,0.25), rgba(21,128,61,0.15))",
-      border: "1px solid rgba(34,197,94,0.4)",
-      boxShadow: "0 10px 25px -12px rgba(34,197,94,0.3)",
-      color: "#dcfce7",
-    }}
-  >
-    <div
-      style={{
-        fontSize: "0.8rem",
-        textTransform: "uppercase",
-        letterSpacing: "0.08em",
-        opacity: 0.85,
-        marginBottom: "0.2rem",
-      }}
-    >
-      💰 Dinero disponible hasta
-    </div>
-    <div
-      style={{
-        fontSize: "0.85rem",
-        opacity: 0.8,
-        marginBottom: "0.35rem",
-      }}
-    >
-      {formatDate(lastSavedAt)}
-    </div>
-    <div
-      style={{
-        fontSize: "1.6rem",
-        fontWeight: 700,
-      }}
-    >
-      {formatMoney(summary.disponible)}
-    </div>
-  </div>
-</div>
+            {/* DINERO DISPONIBLE */}
+            <div
+              style={{
+                ...summaryCardStyle,
+                background:
+                  "linear-gradient(135deg, rgba(34,197,94,0.25), rgba(21,128,61,0.15))",
+                border: "1px solid rgba(34,197,94,0.4)",
+                boxShadow:
+                  "0 10px 25px -12px rgba(34,197,94,0.3)",
+                color: "#dcfce7",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "0.8rem",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                  opacity: 0.85,
+                  marginBottom: "0.2rem",
+                }}
+              >
+                💰 Dinero disponible hasta
+              </div>
+              <div
+                style={{
+                  fontSize: "0.85rem",
+                  opacity: 0.8,
+                  marginBottom: "0.35rem",
+                }}
+              >
+                {formatDate(lastSavedAt)}
+              </div>
+              <div
+                style={{
+                  fontSize: "1.6rem",
+                  fontWeight: 700,
+                }}
+              >
+                {formatMoney(summary.disponible)}
+              </div>
+            </div>
+          </div>
 
-
-          {/* CATEGORÍAS PENDIENTES (basado en último guardado) */}
+          {/* CATEGORÍAS PENDIENTES */}
           <div style={{ marginTop: "1.25rem" }}>
             <h4 style={{ marginBottom: "0.4rem" }}>
               Categorías pendientes de pago
@@ -504,8 +527,7 @@ function BudgetSection({ user, categories }) {
                 <ul>
                   {summary.pendientes.map((p) => (
                     <li key={p.categoryId}>
-                      {p.categoryName}:{" "}
-                      {formatMoney(p.amount)}
+                      {p.categoryName}: {formatMoney(p.amount)}
                     </li>
                   ))}
                 </ul>
@@ -520,30 +542,65 @@ function BudgetSection({ user, categories }) {
           </div>
         </>
       )}
-      {/* FOOTER */}
-      
-<footer
-  style={{
-    marginTop: "2rem",
-    padding: "1.5rem 0",
-    borderTop: "1px solid rgba(255,255,255,0.08)",
-    textAlign: "center",
-    fontSize: "0.85rem",
-    color: "#9ca3af",
-    letterSpacing: "0.05em",
-    background:
-      "linear-gradient(180deg, rgba(2,6,23,0.6), rgba(0,0,0,0.7))",
-  }}
->
-  <p style={{ margin: 0 }}>
-    <strong style={{ color: "#22c55e" }}>NexuraVR</strong> &nbsp;|&nbsp;
-    División <span style={{ color: "#38bdf8" }}>AI</span>
-  </p>
-  <p style={{ margin: "0.25rem 0 0", opacity: 0.7 }}>
-    © {new Date().getFullYear()} Todos los derechos reservados
-  </p>
-</footer>
 
+      {/* FOOTER */}
+      <footer
+        style={{
+          marginTop: "2rem",
+          padding: "1.8rem 0",
+          borderTop: "1px solid rgba(255,255,255,0.08)",
+          textAlign: "center",
+          fontSize: "0.85rem",
+          color: "#9ca3af",
+          background:
+            "linear-gradient(180deg, rgba(2,6,23,0.65), rgba(0,0,0,0.9))",
+          backdropFilter: "blur(6px)",
+        }}
+      >
+        <p
+          style={{
+            margin: 0,
+            fontWeight: 600,
+            fontSize: "1rem",
+            letterSpacing: "0.05em",
+            color: "#e2e8f0",
+            textShadow:
+              "0 0 8px rgba(34,197,94,0.6), 0 0 12px rgba(56,189,248,0.4)",
+            transition: "all 0.3s ease",
+          }}
+        >
+          <span
+            style={{
+              color: "#22c55e",
+              textShadow:
+                "0 0 12px rgba(34,197,94,0.7), 0 0 20px rgba(34,197,94,0.4)",
+            }}
+          >
+            NexuraVR
+          </span>{" "}
+          <span style={{ color: "#94a3b8" }}>|</span>{" "}
+          <span
+            style={{
+              color: "#38bdf8",
+              textShadow:
+                "0 0 12px rgba(56,189,248,0.7), 0 0 20px rgba(56,189,248,0.5)",
+            }}
+          >
+            División AI
+          </span>
+        </p>
+
+        <p
+          style={{
+            margin: "0.4rem 0 0",
+            fontSize: "0.75rem",
+            opacity: 0.75,
+            letterSpacing: "0.04em",
+          }}
+        >
+          © {new Date().getFullYear()} Todos los derechos reservados
+        </p>
+      </footer>
     </div>
   );
 }

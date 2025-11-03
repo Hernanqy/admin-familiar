@@ -1,99 +1,286 @@
+
 // src/components/CategoryManager.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import {
+  collection,
+  getDocs,
+  addDoc,
+  deleteDoc,
+  doc,
+} from "firebase/firestore";
+import { db } from "../firebaseConfig";
 
-function CategoryManager({ categories, onCreate, onUpdate, onDelete }) {
-  const [name, setName] = useState("");
-  const [type, setType] = useState("gasto");
-  const [editingId, setEditingId] = useState(null);
+function CategoryManager({ user }) {
+  const [categories, setCategories] = useState([]);
+  const [newCategory, setNewCategory] = useState("");
+  const [type, setType] = useState("Gasto");
+  const [loading, setLoading] = useState(false);
+  const [showCategories, setShowCategories] = useState(true);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!name.trim()) return;
-
-    if (editingId) {
-      await onUpdate(editingId, { name: name.trim(), type });
-      setEditingId(null);
-    } else {
-      await onCreate({ name: name.trim(), type });
+  // Cargar categorías desde Firestore
+  const loadCategories = async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      const snap = await getDocs(collection(db, "categories"));
+      const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      // filtramos por usuario
+      setCategories(data.filter((c) => c.userId === user.uid));
+    } catch (e) {
+      console.error("Error cargando categorías:", e);
+    } finally {
+      setLoading(false);
     }
-
-    setName("");
-    setType("gasto");
   };
 
-  const handleEdit = (cat) => {
-    setEditingId(cat.id);
-    setName(cat.name);
-    setType(cat.type);
+  useEffect(() => {
+    loadCategories();
+  }, [user]);
+
+  const addCategory = async () => {
+    if (!newCategory.trim()) {
+      alert("Ingresá un nombre de categoría");
+      return;
+    }
+    if (!user) return;
+
+    try {
+      await addDoc(collection(db, "categories"), {
+        name: newCategory.trim(),
+        type: type.toLowerCase(), // "gasto" / "ingreso"
+        userId: user.uid,
+      });
+      setNewCategory("");
+      await loadCategories();
+    } catch (e) {
+      console.error("Error al agregar categoría:", e);
+    }
   };
 
-  const resetForm = () => {
-    setEditingId(null);
-    setName("");
-    setType("gasto");
+  const deleteCategory = async (id) => {
+    if (!window.confirm("¿Eliminar esta categoría?")) return;
+    try {
+      await deleteDoc(doc(db, "categories", id));
+      await loadCategories();
+    } catch (e) {
+      console.error("Error eliminando categoría:", e);
+    }
   };
 
   return (
-    <section className="card">
-      <h2>Categorías</h2>
+    <div
+      style={{
+        maxWidth: "900px",
+        margin: "0 auto",
+        marginTop: "1.5rem",
+        backgroundColor: "#020617",
+        borderRadius: "1rem",
+        padding: "1.5rem",
+        boxShadow: "0 10px 25px -15px rgba(56,189,248,0.4)",
+        color: "#e2e8f0",
+      }}
+    >
+      {/* TÍTULO + BOTÓN OCULTAR */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "0.5rem",
+          marginBottom: "1rem",
+        }}
+      >
+        <h2
+          style={{
+            margin: 0,
+            display: "flex",
+            alignItems: "center",
+            gap: "0.4rem",
+          }}
+        >
+          📁 Categorías
+        </h2>
 
-      <form className="expense-form" onSubmit={handleSubmit}>
+        <button
+          type="button"
+          onClick={() => setShowCategories((prev) => !prev)}
+          style={{
+            background: showCategories
+              ? "linear-gradient(135deg, #334155, #1e293b)"
+              : "linear-gradient(135deg, #22c55e, #16a34a)",
+            color: "white",
+            border: "none",
+            borderRadius: "999px",
+            padding: "0.35rem 0.9rem",
+            fontWeight: 500,
+            fontSize: "0.85rem",
+            cursor: "pointer",
+            transition: "0.2s",
+          }}
+        >
+          {showCategories ? "Ocultar lista" : "Mostrar lista"}
+        </button>
+      </div>
+
+      {/* FORMULARIO ALTA CATEGORÍA */}
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "0.5rem",
+          marginBottom: "1rem",
+        }}
+      >
         <input
           type="text"
           placeholder="Nombre de categoría (ej: Sueldo, Supermercado)"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
+          value={newCategory}
+          onChange={(e) => setNewCategory(e.target.value)}
+          style={{
+            flex: "1 1 250px",
+            padding: "0.45rem 0.6rem",
+            borderRadius: "8px",
+            border: "1px solid #334155",
+            background: "#0f172a",
+            color: "#f1f5f9",
+          }}
         />
-
-        <select value={type} onChange={(e) => setType(e.target.value)}>
-          <option value="gasto">Gasto</option>
-          <option value="ingreso">Ingreso</option>
+        <select
+          value={type}
+          onChange={(e) => setType(e.target.value)}
+          style={{
+            borderRadius: "8px",
+            border: "1px solid #334155",
+            background: "#0f172a",
+            color: "#f1f5f9",
+            padding: "0.45rem",
+          }}
+        >
+          <option value="Gasto">Gasto</option>
+          <option value="Ingreso">Ingreso</option>
         </select>
+        <button
+          onClick={addCategory}
+          style={{
+            background: "linear-gradient(135deg, #22c55e, #16a34a)",
+            color: "white",
+            border: "none",
+            borderRadius: "8px",
+            padding: "0.45rem 1rem",
+            fontWeight: 600,
+            cursor: "pointer",
+            transition: "0.2s",
+          }}
+          onMouseOver={(e) =>
+            (e.target.style.background =
+              "linear-gradient(135deg, #16a34a, #15803d)")
+          }
+          onMouseOut={(e) =>
+            (e.target.style.background =
+              "linear-gradient(135deg, #22c55e, #16a34a)")
+          }
+        >
+          ➕ Agregar categoría
+        </button>
+      </div>
 
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button type="submit">
-            {editingId ? "Actualizar categoría" : "Agregar categoría"}
-          </button>
-          {editingId && (
-            <button type="button" onClick={resetForm}>
-              Cancelar
-            </button>
-          )}
-        </div>
-      </form>
-
-      {categories.length === 0 ? (
-        <p style={{ marginTop: "0.75rem" }}>No hay categorías aún.</p>
-      ) : (
-        <table className="table" style={{ marginTop: "0.75rem" }}>
-          <thead>
-            <tr>
-              <th>Nombre</th>
-              <th>Tipo</th>
-              <th style={{ textAlign: "right" }}>Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {categories.map((cat) => (
-              <tr key={cat.id}>
-                <td>{cat.name}</td>
-                <td>{cat.type === "gasto" ? "Gasto" : "Ingreso"}</td>
-                <td style={{ textAlign: "right" }}>
-                  <button onClick={() => handleEdit(cat)}>Editar</button>
-                  <button
-                    style={{ marginLeft: "0.5rem" }}
-                    onClick={() => onDelete(cat.id)}
-                  >
-                    Eliminar
-                  </button>
-                </td>
+      {/* LISTA / TABLA */}
+      {loading ? (
+        <p>Cargando categorías...</p>
+      ) : showCategories ? (
+        <div style={{ overflowX: "auto" }}>
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              minWidth: "500px",
+            }}
+          >
+            <thead>
+              <tr style={{ textAlign: "left", color: "#94a3b8" }}>
+                <th style={{ paddingBottom: "0.5rem" }}>Nombre</th>
+                <th style={{ paddingBottom: "0.5rem" }}>Tipo</th>
+                <th style={{ paddingBottom: "0.5rem" }}>Acciones</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {categories.length === 0 ? (
+                <tr>
+                  <td colSpan="3" style={{ padding: "0.6rem 0" }}>
+                    No hay categorías registradas.
+                  </td>
+                </tr>
+              ) : (
+                categories.map((cat) => (
+                  <tr
+                    key={cat.id}
+                    style={{
+                      borderBottom:
+                        "1px solid rgba(255,255,255,0.05)",
+                      transition: "background 0.2s ease",
+                    }}
+                    onMouseOver={(e) =>
+                      (e.currentTarget.style.backgroundColor =
+                        "#0f172a")
+                    }
+                    onMouseOut={(e) =>
+                      (e.currentTarget.style.backgroundColor =
+                        "transparent")
+                    }
+                  >
+                    <td style={{ padding: "0.4rem 0" }}>{cat.name}</td>
+                    <td
+                      style={{
+                        padding: "0.4rem 0",
+                        color:
+                          cat.type === "ingreso"
+                            ? "#4ade80"
+                            : "#f87171",
+                        fontWeight: 600,
+                        textTransform: "capitalize",
+                      }}
+                    >
+                      {cat.type}
+                    </td>
+                    <td style={{ padding: "0.4rem 0" }}>
+                      <button
+                        onClick={() => deleteCategory(cat.id)}
+                        style={{
+                          background:
+                            "linear-gradient(135deg, #ef4444, #dc2626)",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "6px",
+                          padding: "0.35rem 0.8rem",
+                          cursor: "pointer",
+                          fontWeight: 500,
+                          transition: "0.2s",
+                        }}
+                        onMouseOver={(e) =>
+                          (e.target.style.background =
+                            "linear-gradient(135deg, #dc2626, #b91c1c)")
+                        }
+                        onMouseOut={(e) =>
+                          (e.target.style.background =
+                            "linear-gradient(135deg, #ef4444, #dc2626)")
+                        }
+                      >
+                        🗑️ Eliminar
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p style={{ opacity: 0.7, fontSize: "0.9rem", marginTop: "0.5rem" }}>
+          📁 Lista de categorías oculta.
+        </p>
       )}
-    </section>
+    </div>
   );
 }
 
