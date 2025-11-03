@@ -6,7 +6,27 @@ import { db } from "../firebaseConfig";
 const getCurrentMonth = () => {
   const d = new Date();
   const m = String(d.getMonth() + 1).padStart(2, "0");
-  return `${d.getFullYear()}-${m}`; // p.ej. 2025-11
+  return `${d.getFullYear()}-${m}`; // 2025-11
+};
+
+// Estilo base para el botón de guardar
+const saveButtonBaseStyle = {
+  marginTop: "0.75rem",
+  padding: "0.6rem 1.3rem",
+  borderRadius: "999px",
+  border: "none",
+  background: "linear-gradient(135deg, #16a34a, #22c55e)",
+  color: "#f9fafb",
+  fontWeight: 600,
+  fontSize: "0.95rem",
+  display: "inline-flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: "0.15rem",
+  boxShadow: "0 10px 15px -3px rgba(34, 197, 94, 0.4)",
+  cursor: "pointer",
+  transition: "transform 0.1s ease, box-shadow 0.1s ease, opacity 0.1s ease",
 };
 
 // Une categorías existentes con lo que haya guardado en Firestore
@@ -22,7 +42,7 @@ const mergeCategoriesWithBudget = (categories, budgetItems) => {
       categoryId: cat.id,
       categoryName: cat.name,
       type: cat.type || "Gasto",
-      // usamos string para que no aparezca un "0" de entrada
+      // string vacío mientras no haya valor
       amount:
         existing.amount === 0 || existing.amount
           ? String(existing.amount)
@@ -32,15 +52,15 @@ const mergeCategoriesWithBudget = (categories, budgetItems) => {
   });
 };
 
-function BudgetSection({ user, categories, onSummaryChange }) {
+function BudgetSection({ user, categories }) {
   const [month, setMonth] = useState(getCurrentMonth);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const docId = `${user.uid}_${month}`;
+  const docId = user ? `${user.uid}_${month}` : "";
 
-  // Cargar presupuesto al cambiar mes o categorías
+  // Cargar presupuesto cuando cambian mes o categorías
   useEffect(() => {
     if (!user) return;
 
@@ -51,9 +71,7 @@ function BudgetSection({ user, categories, onSummaryChange }) {
         const snap = await getDoc(ref);
         if (snap.exists()) {
           const data = snap.data();
-          setItems(
-            mergeCategoriesWithBudget(categories, data.items || [])
-          );
+          setItems(mergeCategoriesWithBudget(categories, data.items || []));
         } else {
           setItems(mergeCategoriesWithBudget(categories, []));
         }
@@ -66,10 +84,11 @@ function BudgetSection({ user, categories, onSummaryChange }) {
 
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user.uid, month, JSON.stringify(categories)]);
+  }, [user?.uid, month, JSON.stringify(categories)]);
 
-  // Cambiar monto
+  // Cambiar monto de una categoría
   const handleAmountChange = (categoryId, value) => {
+    // Permitimos string vacío para que no aparezca "0"
     setItems((prev) =>
       prev.map((it) =>
         it.categoryId === categoryId ? { ...it, amount: value } : it
@@ -77,7 +96,7 @@ function BudgetSection({ user, categories, onSummaryChange }) {
     );
   };
 
-  // Cambiar "pagado"
+  // Cambiar "pagado" de una categoría
   const handlePaidChange = (categoryId, checked) => {
     setItems((prev) =>
       prev.map((it) =>
@@ -88,9 +107,16 @@ function BudgetSection({ user, categories, onSummaryChange }) {
 
   // Guardar en Firestore
   const handleSave = async () => {
+    if (!user) {
+      alert("No hay usuario autenticado. Iniciá sesión para guardar el presupuesto.");
+      return;
+    }
+
     setSaving(true);
     try {
       const ref = doc(db, "monthlyBudgets", docId);
+
+      // Convertimos amount a número al guardar
       const itemsToSave = items.map((it) => ({
         ...it,
         amount: Number(it.amount) || 0,
@@ -101,20 +127,22 @@ function BudgetSection({ user, categories, onSummaryChange }) {
         month,
         items: itemsToSave,
       });
-      alert("Presupuesto guardado ✅");
+
+      alert("Presupuesto guardado en la base de datos ✅");
     } catch (e) {
-      console.error(e);
-      alert("Error al guardar el presupuesto");
+      console.error("Error al guardar el presupuesto:", e);
+      alert("Error al guardar el presupuesto. Revisá la consola para más detalles.");
     } finally {
       setSaving(false);
     }
   };
 
-  // Cálculo del resumen del mes
+  // Cálculos del resumen
   const summary = useMemo(() => {
+    // Gasto = cualquier ítem cuyo tipo es "Gasto"
     const gastos = items.filter((i) => i.type === "Gasto");
 
-    // Ingresos por sueldos (categorías tipo Ingreso con "sueldo")
+    // ingresos por sueldos (categorías tipo Ingreso con "sueldo" en el nombre)
     const sueldos = items.filter(
       (i) =>
         i.type === "Ingreso" &&
@@ -125,6 +153,7 @@ function BudgetSection({ user, categories, onSummaryChange }) {
       (s, i) => s + (Number(i.amount) || 0),
       0
     );
+
     const totalPagado = gastos
       .filter((i) => i.paid)
       .reduce((s, i) => s + (Number(i.amount) || 0), 0);
@@ -134,11 +163,15 @@ function BudgetSection({ user, categories, onSummaryChange }) {
       0
     );
 
-    const disponible = totalSueldos - totalPagado;
+    // Lo que te quedaría si se cumplen todos los gastos presupuestados
+    const disponiblePresupuestado = totalSueldos - totalGastos;
 
-    const pendientes = gastos.filter(
-      (i) => !i.paid && Number(i.amount) > 0
-    );
+    // Lo que te queda hoy, con lo efectivamente pagado
+    const disponibleReal = totalSueldos - totalPagado;
+
+    // Todas las categorías de gasto que NO están marcadas como pagadas
+    const pendientes = gastos.filter((i) => !i.paid);
+
     const totalPendiente = pendientes.reduce(
       (s, i) => s + (Number(i.amount) || 0),
       0
@@ -148,18 +181,21 @@ function BudgetSection({ user, categories, onSummaryChange }) {
       totalGastos,
       totalPagado,
       totalSueldos,
-      disponible,
+      disponiblePresupuestado,
+      disponibleReal,
       pendientes,
       totalPendiente,
     };
   }, [items]);
 
-  // Avisar al Dashboard cuando cambie el resumen
-  useEffect(() => {
-    if (onSummaryChange) {
-      onSummaryChange(summary);
-    }
-  }, [summary, onSummaryChange]);
+  const formatMoney = (v) =>
+    new Intl.NumberFormat("es-AR", {
+      style: "currency",
+      currency: "ARS",
+      minimumFractionDigits: 2,
+    }).format(v || 0);
+
+  const isSaveDisabled = saving || loading || !items.length;
 
   return (
     <div>
@@ -210,10 +246,7 @@ function BudgetSection({ user, categories, onSummaryChange }) {
                       min="0"
                       value={it.amount}
                       onChange={(e) =>
-                        handleAmountChange(
-                          it.categoryId,
-                          e.target.value
-                        )
+                        handleAmountChange(it.categoryId, e.target.value)
                       }
                     />
                   </td>
@@ -222,10 +255,7 @@ function BudgetSection({ user, categories, onSummaryChange }) {
                       type="checkbox"
                       checked={it.paid}
                       onChange={(e) =>
-                        handlePaidChange(
-                          it.categoryId,
-                          e.target.checked
-                        )
+                        handlePaidChange(it.categoryId, e.target.checked)
                       }
                     />
                   </td>
@@ -234,9 +264,69 @@ function BudgetSection({ user, categories, onSummaryChange }) {
             </tbody>
           </table>
 
-          <button onClick={handleSave} disabled={saving}>
-            {saving ? "Guardando..." : "Guardar presupuesto"}
+          <button
+            onClick={handleSave}
+            disabled={isSaveDisabled}
+            style={{
+              ...saveButtonBaseStyle,
+              opacity: isSaveDisabled ? 0.6 : 1,
+              cursor: isSaveDisabled ? "not-allowed" : "pointer",
+            }}
+          >
+            <span>
+              {saving ? "Guardando presupuesto..." : "💾 Guardar presupuesto"}
+            </span>
+            {!saving && (
+              <span style={{ fontSize: "0.75rem", opacity: 0.9 }}>
+                Se almacenará en la base de datos y actualizará tus registros
+              </span>
+            )}
           </button>
+
+          <div style={{ marginTop: "1rem" }}>
+            <h3>Resumen del mes</h3>
+            <p>
+              Total gastos presupuestados:{" "}
+              <strong>{formatMoney(summary.totalGastos)}</strong>
+            </p>
+            <p>
+              Total pagado:{" "}
+              <strong>{formatMoney(summary.totalPagado)}</strong>
+            </p>
+            <p>
+              Ingresos por sueldos (presupuesto):{" "}
+              <strong>{formatMoney(summary.totalSueldos)}</strong>
+            </p>
+            <p>
+              Disponible presupuestado (sueldos − gastos):{" "}
+              <strong>{formatMoney(summary.disponiblePresupuestado)}</strong>
+            </p>
+            <p>
+              Disponible real (sueldos − pagado):{" "}
+              <strong>{formatMoney(summary.disponibleReal)}</strong>
+            </p>
+
+            <h4 style={{ marginTop: "0.75rem" }}>
+              Categorías pendientes de pago
+            </h4>
+            {summary.pendientes.length === 0 ? (
+              <p>No hay categorías de gastos pendientes de pago 👌</p>
+            ) : (
+              <>
+                <ul>
+                  {summary.pendientes.map((p) => (
+                    <li key={p.categoryId}>
+                      {p.categoryName}: {formatMoney(p.amount)}
+                    </li>
+                  ))}
+                </ul>
+                <p>
+                  Total pendiente:{" "}
+                  <strong>{formatMoney(summary.totalPendiente)}</strong>
+                </p>
+              </>
+            )}
+          </div>
         </>
       )}
     </div>
